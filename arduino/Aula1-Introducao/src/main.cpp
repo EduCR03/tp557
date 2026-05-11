@@ -5,6 +5,7 @@ bool live_mode = false;
 bool capture_requested = false;
 
 byte image[176 * 144 * 2];
+const byte frame_start_marker[] = {0xAA, 0x55, 0xAA, 0x55};
 
 uint16_t bytes_per_frame = 0;
 
@@ -190,6 +191,7 @@ void loop()
     if (live_mode)
     {
         Camera.readFrame(image);
+        Serial.write(frame_start_marker, sizeof(frame_start_marker));
         Serial.write(image, bytes_per_frame);
     }
 
