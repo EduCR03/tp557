@@ -86,6 +86,8 @@ def read_exactly(serial_port, size, timeout=5):
 def wait_for_frame_start(serial_port, timeout=12):
     start_time = time.monotonic()
     buffer = bytearray()
+    line_buffer = bytearray()
+    last_label = None
 
     # Procura o marcador enviado antes de cada imagem
     while True:
@@ -102,7 +104,19 @@ def wait_for_frame_start(serial_port, timeout=12):
             buffer = buffer[-len(FRAME_START_MARKER):]
 
         if bytes(buffer) == FRAME_START_MARKER:
-            return True
+            return True, last_label
+
+        value = byte[0]
+
+        # Le mensagens de texto enviadas entre os frames
+        if value in (10, 13):
+            line = line_buffer.decode(errors="ignore").strip()
+            line_buffer.clear()
+
+            if line.startswith("Label:"):
+                last_label = line.replace("Label:", "").strip()
+        elif 32 <= value <= 126 and len(line_buffer) < 120:
+            line_buffer.extend(byte)
 
 
 def main():
@@ -111,6 +125,7 @@ def main():
     parser.add_argument("--baud", type=int, default=115200, help="Velocidade serial")
     parser.add_argument("--scale", type=int, default=3, help="Escala da janela")
     parser.add_argument("--save", help="Salva o ultimo frame em PNG")
+    parser.add_argument("--infer", action="store_true", help="Mostra camera e label detectado")
     args = parser.parse_args()
 
     if not args.port:
@@ -124,19 +139,28 @@ def main():
     read_startup_messages(serial_port)
     serial_port.reset_input_buffer()
 
-    print("Enviando comando live...")
-    serial_port.write(b"live\n")
+    if args.infer:
+        print("Enviando comando live_infer...")
+        serial_port.write(b"live_infer\n")
+    else:
+        print("Enviando comando live...")
+        serial_port.write(b"live\n")
+
     serial_port.flush()
 
     print("Aguardando primeiro frame...")
 
     print("Mostrando imagem. Pressione q para sair.")
     last_frame = None
+    label_text = ""
     use_marker = True
 
     while True:
         if use_marker:
-            found_marker = wait_for_frame_start(serial_port)
+            found_marker, new_label = wait_for_frame_start(serial_port)
+
+            if new_label:
+                label_text = new_label
 
             if not found_marker:
                 print("Marcador nao encontrado. Tentando leitura bruta.")
@@ -160,6 +184,18 @@ def main():
             (WIDTH * args.scale, HEIGHT * args.scale),
             interpolation=cv2.INTER_NEAREST
         )
+
+        if label_text:
+            cv2.rectangle(frame, (0, 0), (260, 34), (0, 0, 0), -1)
+            cv2.putText(
+                frame,
+                f"Label: {label_text}",
+                (10, 24),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (255, 255, 255),
+                2
+            )
 
         cv2.imshow("TinyML Shield Camera", frame)
 
