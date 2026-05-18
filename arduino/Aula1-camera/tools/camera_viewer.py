@@ -46,6 +46,37 @@ def rgb_to_bgr(image):
     return cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
 
+def draw_center_marker(frame):
+    # Copia a imagem para criar marcador transparente
+    overlay = frame.copy()
+
+    height, width = frame.shape[:2]
+
+    # Calcula centro da imagem
+    center_x = width // 2
+    center_y = height // 2
+
+    # Define tamanho da area onde a mao deve ficar
+    box_width = int(width * 0.38)
+    box_height = int(height * 0.55)
+
+    # Calcula cantos do retangulo
+    x1 = center_x - box_width // 2
+    y1 = center_y - box_height // 2
+    x2 = center_x + box_width // 2
+    y2 = center_y + box_height // 2
+
+    # Desenha retangulo suave no centro
+    cv2.rectangle(overlay, (x1, y1), (x2, y2), (80, 220, 80), 2)
+
+    # Desenha uma cruz pequena no centro
+    cv2.line(overlay, (center_x - 15, center_y), (center_x + 15, center_y), (80, 220, 80), 1)
+    cv2.line(overlay, (center_x, center_y - 15), (center_x, center_y + 15), (80, 220, 80), 1)
+
+    # Mistura marcador com a imagem
+    cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
+
+
 def read_startup_messages(serial_port, timeout=10):
     start_time = time.monotonic()
 
@@ -184,6 +215,8 @@ def main():
             (WIDTH * args.scale, HEIGHT * args.scale),
             interpolation=cv2.INTER_NEAREST
         )
+
+        draw_center_marker(frame)
 
         if label_text:
             cv2.rectangle(frame, (0, 0), (260, 34), (0, 0, 0), -1)
