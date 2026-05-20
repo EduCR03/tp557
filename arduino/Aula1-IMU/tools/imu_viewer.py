@@ -9,6 +9,7 @@ from serial.tools import list_ports
 
 BAUD_RATE = 9600
 WINDOW_SIZE = 120
+INFERENCE_INTERVAL = 3
 
 
 def list_serial_ports():
@@ -52,7 +53,11 @@ def read_imu_values(serial_port, labels):
     line = serial_port.readline().decode(errors="ignore").strip()
 
     if not line:
-        return None
+        return None, None
+
+    if line.startswith("Best label:"):
+        best_label = line.replace("Best label:", "").strip()
+        return None, best_label
 
     values = {}
     parts = line.split("\t")
@@ -70,12 +75,12 @@ def read_imu_values(serial_port, labels):
             try:
                 values[name] = float(value)
             except ValueError:
-                return None
+                return None, None
 
     if len(values) != 3:
-        return None
+        return None, None
 
-    return values[labels[0]], values[labels[1]], values[labels[2]]
+    return (values[labels[0]], values[labels[1]], values[labels[2]]), None
 
 
 def main():
@@ -85,6 +90,9 @@ def main():
     parser.add_argument("--mode", choices=["a", "g", "m"], default="a", help="a, g ou m")
     parser.add_argument("--window", type=int, default=WINDOW_SIZE, help="Quantidade de pontos na tela")
     parser.add_argument("--limit", type=float, help="Limite vertical do grafico")
+    parser.add_argument("--infer", action="store_true", help="Mostra o melhor label no grafico")
+    parser.add_argument("--no-infer", action="store_false", dest="infer", help="Desliga o melhor label")
+    parser.set_defaults(infer=True)
     args = parser.parse_args()
 
     if not args.port:
@@ -109,6 +117,9 @@ def main():
     time.sleep(0.5)
     serial_port.reset_input_buffer()
 
+    if args.infer:
+        print("Inferencia ativada.")
+
     x_values = deque([0] * args.window, maxlen=args.window)
     y_values = deque([0] * args.window, maxlen=args.window)
     z_values = deque([0] * args.window, maxlen=args.window)
@@ -118,9 +129,9 @@ def main():
     x_axis = list(range(args.window))
 
     # Cria uma linha para cada eixo
-    line_x, = ax.plot(x_axis, list(x_values), label=labels[0])
-    line_y, = ax.plot(x_axis, list(y_values), label=labels[1])
-    line_z, = ax.plot(x_axis, list(z_values), label=labels[2])
+    line_x, = ax.plot(x_axis, list(x_values), color="red", label=labels[0])
+    line_y, = ax.plot(x_axis, list(y_values), color="green", label=labels[1])
+    line_z, = ax.plot(x_axis, list(z_values), color="blue", label=labels[2])
 
     ax.set_title(f"IMU - {title}")
     ax.set_xlabel("Amostras")
@@ -130,18 +141,50 @@ def main():
     ax.grid(True)
     ax.legend()
 
+    label_text = None
+
+    if args.infer:
+        # Texto usado para mostrar o label detectado
+        label_text = fig.text(
+            0.02,
+            0.96,
+            "Best label: aguardando...",
+            fontsize=14,
+            color="white",
+            bbox=dict(facecolor="#1f2937", edgecolor="#1f2937", pad=8),
+        )
+
     print("Mostrando IMU. Feche a janela para sair.")
 
+    last_inference = time.monotonic() - INFERENCE_INTERVAL
+    reading_inference = False
+
     while plt.fignum_exists(fig.number):
+        if args.infer and not reading_inference:
+            if time.monotonic() - last_inference >= INFERENCE_INTERVAL:
+                # Pede uma classificacao para o Arduino
+                serial_port.write(b"i\n")
+                serial_port.flush()
+                reading_inference = True
+
         # Le alguns pontos por atualizacao
         for _ in range(5):
-            values = read_imu_values(serial_port, labels)
+            values, best_label = read_imu_values(serial_port, labels)
 
             if values is not None:
                 x, y, z = values
                 x_values.append(x)
                 y_values.append(y)
                 z_values.append(z)
+
+            if best_label and label_text is not None:
+                label_text.set_text(f"Best label: {best_label}")
+                last_inference = time.monotonic()
+                reading_inference = False
+
+                # Volta para o modo do grafico
+                serial_port.write((args.mode + "\n").encode())
+                serial_port.flush()
 
         line_x.set_ydata(list(x_values))
         line_y.set_ydata(list(y_values))

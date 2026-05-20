@@ -1,4 +1,4 @@
-#include <Aula2-Classificacao_Movimento_inferencing.h>
+#include <Projeto-Aula-2_inferencing.h>
 #include <Arduino_LSM9DS1.h>
 
 // Converte aceleracao de g para m/s2
@@ -30,7 +30,7 @@ float get_sign(float number)
     }
 }
 
-void print_classification(ei_impulse_result_t result)
+void print_best_label(ei_impulse_result_t result)
 {
     // Comeca usando o primeiro label como melhor
     int best_index = 0;
@@ -120,8 +120,8 @@ void run_inference()
         return;
     }
 
-    // Mostra todos os labels e o melhor resultado
-    print_classification(result);
+    // Mostra apenas o melhor resultado
+    print_best_label(result);
     Serial.println();
 }
 
